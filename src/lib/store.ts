@@ -261,7 +261,8 @@ export const useAppStore = create<AppStore>()(
                         const updatedTasks = p.tasks.map((t) => ({
                             ...t,
                             schedule: {
-                                earliestDay: t.schedule.earliestDay + days,
+                                ...t.schedule,
+                                earliestDay: (t.schedule.earliestDay ?? t.schedule.recommendedDay) + days,
                                 latestDay: t.schedule.latestDay + days,
                                 recommendedDay: t.schedule.recommendedDay + days
                             }

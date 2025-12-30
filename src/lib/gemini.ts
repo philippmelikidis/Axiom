@@ -96,6 +96,37 @@ interface UpdatePlanInput {
     adjustmentText?: string;
 }
 
+// Calculate appropriate task count based on time horizon
+// For very long plans, we generate fewer, more general tasks to avoid timeout
+function getTaskCountGuidance(days: number): { phases: string; tasks: string; skills: string; note?: string } {
+    if (days <= 14) {
+        return { phases: '2-3', tasks: '10-20', skills: '3-6' };
+    } else if (days <= 30) {
+        return { phases: '3-4', tasks: '20-40', skills: '4-8' };
+    } else if (days <= 90) {
+        return { phases: '4-6', tasks: '40-60', skills: '6-10' };
+    } else if (days <= 180) {
+        return { phases: '5-6', tasks: '50-80', skills: '8-12' };
+    } else {
+        // For 365+ day plans, generate WEEKLY task templates instead of daily
+        return {
+            phases: '6-8',
+            tasks: '60-100',
+            skills: '8-12',
+            note: 'Generate WEEKLY recurring task templates, not individual daily tasks. Each task represents a weekly pattern.'
+        };
+    }
+}
+
+// Calculate max output tokens based on complexity
+function getMaxOutputTokens(days: number): number {
+    if (days <= 14) return 8192;
+    if (days <= 30) return 12000;
+    if (days <= 90) return 16000;
+    if (days <= 180) return 20000;
+    return 32000; // Maximum for very long plans
+}
+
 export async function callGemini(
     mode: 'create' | 'update',
     input: CreatePlanInput | UpdatePlanInput
@@ -106,9 +137,13 @@ export async function callGemini(
 
     const schema = getSchemaForPrompt();
     let userMessage = '';
+    let maxTokens = 8192;
 
     if (mode === 'create') {
         const createInput = input as CreatePlanInput;
+        const guidance = getTaskCountGuidance(createInput.timeHorizonDays);
+        maxTokens = getMaxOutputTokens(createInput.timeHorizonDays);
+
         const trainingSection = createInput.trainingProfile ? `
 TRAINING PROFILE:
 - Current Level: ${createInput.trainingProfile.currentLevel || 'Not specified'}
@@ -117,10 +152,26 @@ TRAINING PROFILE:
 - Available Metrics: ${createInput.trainingProfile.availableMetrics || 'RPE only'}
 ` : '';
 
+        // Allow longer input for complex plans, but still truncate if excessive
+        const maxInputLength = createInput.timeHorizonDays > 180 ? 4000 : 2500;
+        const truncatedUserText = createInput.userText.length > maxInputLength
+            ? createInput.userText.substring(0, maxInputLength) + '... (truncated)'
+            : createInput.userText;
+
+        // Add special guidance for very long plans
+        const longPlanNote = guidance.note ? `
+IMPORTANT FOR LONG PLANS:
+${guidance.note}
+Instead of generating individual daily tasks, create WEEKLY TRAINING BLOCKS like:
+- "Week 1: Base Building" (recommendedDay: 1)
+- "Week 2: Volume Increase" (recommendedDay: 8)
+Each task represents a week's focus, not a single session.
+` : '';
+
         userMessage = `MODE: create
 
 USER INPUT:
-"${createInput.userText}"
+"${truncatedUserText}"
 
 TIME HORIZON: ${createInput.timeHorizonDays} days
 START DATE: ${createInput.startDate}
@@ -129,25 +180,29 @@ ${trainingSection}
 REQUIRED OUTPUT SCHEMA:
 ${schema}
 
+SCALING GUIDANCE (IMPORTANT):
+- For a ${createInput.timeHorizonDays}-day plan:
+- Create ${guidance.phases} phases with clear progression
+- Generate ${guidance.tasks} tasks spread across phases
+- Create ${guidance.skills} skills that will be developed
+- Tasks should be spread roughly evenly across the time horizon
+${longPlanNote}
 INSTRUCTIONS:
 1. Generate a complete project plan following the schema exactly
-2. Create 3-6 phases with clear progression
-3. Generate 15-30 tasks spread across phases
-4. Create 5-10 skills that will be developed
-5. Tasks must be detailed and actionable
-6. For training tasks, MUST include:
+2. Tasks must be detailed and actionable
+3. For training tasks, MUST include:
    - sessionType (e.g., "easy run", "interval", "tempo", "long run", "recovery")
    - warmup (specific instructions)
    - mainSet (specific instructions with pace/HR/RPE targets)
    - cooldown (specific instructions)
    - At least one of: targetPace, targetHeartRate, or rpe
-7. Ensure task dependencies are logical (no circular dependencies)
-8. Set recommendedDay to spread tasks across the time horizon
-9. Generate unique UUIDs for all IDs (format: "proj_xxx", "phase_xxx", "task_xxx", "skill_xxx")
-10. Set all task states to "todo"
-11. Set all skill levels to 0
-12. List any assumptions made in the assumptions array
-13. Include todayCardRules with selectionLogic
+4. Ensure task dependencies are logical (no circular dependencies)
+5. Set recommendedDay to spread tasks across the time horizon (day 1 to day ${createInput.timeHorizonDays})
+6. Generate unique UUIDs for all IDs (format: "proj_xxx", "phase_xxx", "task_xxx", "skill_xxx")
+7. Set all task states to "todo"
+8. Set all skill levels to 0
+9. List any assumptions made in the assumptions array
+10. Include todayCardRules with selectionLogic
 
 Return ONLY valid JSON. No explanation, no markdown.`;
     } else {
@@ -189,7 +244,7 @@ Return ONLY valid JSON. No explanation, no markdown.`;
     }
 
     try {
-        let response = await makeGeminiRequest(userMessage);
+        let response = await makeGeminiRequest(userMessage, maxTokens);
 
         if (!response.success || !response.data) {
             return { success: false, error: response.error || 'Failed to get response from Gemini' };
@@ -205,7 +260,7 @@ ${response.data}
 SCHEMA:
 ${schema}`;
 
-            response = await makeGeminiRequest(repairMessage);
+            response = await makeGeminiRequest(repairMessage, maxTokens);
             if (!response.success || !response.data) {
                 return { success: false, error: 'Failed to generate valid JSON after repair attempt' };
             }
@@ -225,7 +280,7 @@ ${schema}`;
     }
 }
 
-async function makeGeminiRequest(userMessage: string): Promise<{ success: boolean; data?: string; error?: string }> {
+async function makeGeminiRequest(userMessage: string, maxTokens: number = 8192): Promise<{ success: boolean; data?: string; error?: string }> {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
     const body = {
@@ -239,7 +294,7 @@ async function makeGeminiRequest(userMessage: string): Promise<{ success: boolea
             temperature: 0.7,
             topK: 40,
             topP: 0.95,
-            maxOutputTokens: 8192,
+            maxOutputTokens: maxTokens,
         },
         safetySettings: [
             { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
@@ -275,8 +330,11 @@ async function makeGeminiRequest(userMessage: string): Promise<{ success: boolea
 }
 
 function tryParseJSON(text: string): object | null {
+    if (!text || typeof text !== 'string') return null;
+
     let cleaned = text.trim();
 
+    // Remove markdown code fences
     if (cleaned.startsWith('```json')) {
         cleaned = cleaned.slice(7);
     } else if (cleaned.startsWith('```')) {
@@ -287,17 +345,75 @@ function tryParseJSON(text: string): object | null {
     }
     cleaned = cleaned.trim();
 
+    // Remove any leading text before the first {
+    const firstBrace = cleaned.indexOf('{');
+    if (firstBrace > 0) {
+        cleaned = cleaned.slice(firstBrace);
+    }
+
+    // Remove any trailing text after the last }  
+    const lastBrace = cleaned.lastIndexOf('}');
+    if (lastBrace > 0 && lastBrace < cleaned.length - 1) {
+        cleaned = cleaned.slice(0, lastBrace + 1);
+    }
+
+    // Try direct parse first
     try {
         return JSON.parse(cleaned);
     } catch {
-        const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
+        // Continue to other strategies
+    }
+
+    // Strategy 2: Fix trailing commas
+    try {
+        const fixed = cleaned.replace(/,\s*}/g, '}').replace(/,\s*]/g, ']');
+        return JSON.parse(fixed);
+    } catch {
+        // Continue
+    }
+
+    // Strategy 3: Extract JSON object using regex
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+        try {
+            return JSON.parse(jsonMatch[0]);
+        } catch {
             try {
-                return JSON.parse(jsonMatch[0]);
+                const fixed = jsonMatch[0].replace(/,\s*}/g, '}').replace(/,\s*]/g, ']');
+                return JSON.parse(fixed);
             } catch {
-                return null;
+                // Continue
             }
         }
-        return null;
     }
+
+    // Strategy 4: Find balanced braces
+    try {
+        let depth = 0;
+        let start = -1;
+        let end = -1;
+
+        for (let i = 0; i < cleaned.length; i++) {
+            if (cleaned[i] === '{') {
+                if (depth === 0) start = i;
+                depth++;
+            } else if (cleaned[i] === '}') {
+                depth--;
+                if (depth === 0) {
+                    end = i + 1;
+                    break;
+                }
+            }
+        }
+
+        if (start >= 0 && end > start) {
+            const extracted = cleaned.slice(start, end);
+            return JSON.parse(extracted);
+        }
+    } catch {
+        // Continue
+    }
+
+    console.error('[JSON Parse] All strategies failed. First 500 chars:', cleaned.slice(0, 500));
+    return null;
 }

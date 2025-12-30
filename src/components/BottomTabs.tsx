@@ -1,13 +1,13 @@
 'use client';
 
 import { usePathname, useRouter } from 'next/navigation';
-import { Home, Calendar, Map, Zap, Settings } from 'lucide-react';
+import { Home, Calendar, Map, MessageCircle, Settings } from 'lucide-react';
 
 const tabs = [
     { name: 'Projects', path: '/projects', icon: Home },
     { name: 'Today', path: '/today', icon: Calendar },
     { name: 'Roadmap', path: '/roadmap', icon: Map },
-    { name: 'Skills', path: '/skills', icon: Zap },
+    { name: 'Chat', path: '/chat', icon: MessageCircle },
     { name: 'Settings', path: '/settings', icon: Settings },
 ];
 

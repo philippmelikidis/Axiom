@@ -21,11 +21,11 @@ export const ProjectStatusSchema = z.enum(['active', 'paused', 'completed']);
 export const SkillSchema = z.object({
     skillId: z.string(),
     name: z.string(),
-    description: z.string(),
-    level: z.number().min(0),
-    maxLevel: z.number().min(1),
-    parents: z.array(z.string()),
-    progressRule: z.string()
+    description: z.string().default(''),
+    level: z.number().min(0).default(0),
+    maxLevel: z.number().min(1).default(10),
+    parents: z.array(z.string()).default([]),
+    progressRule: z.string().default('')
 });
 
 // Skill Impact
@@ -36,26 +36,27 @@ export const SkillImpactSchema = z.object({
 
 // Task Schedule
 export const TaskScheduleSchema = z.object({
-    earliestDay: z.number(),
+    earliestDay: z.number().optional(),
     latestDay: z.number(),
-    recommendedDay: z.number()
+    recommendedDay: z.number(),
+    flexibilityLevel: z.string().optional()
 });
 
-// Training Details (for train type tasks)
+// Training Details (for train type tasks) - ALL FIELDS OPTIONAL/NULLABLE
 export const TrainingDetailsSchema = z.object({
-    sessionType: z.string().optional(),
-    warmup: z.string().optional(),
-    mainSet: z.string().optional(),
-    cooldown: z.string().optional(),
+    sessionType: z.string().nullable().optional(),
+    warmup: z.string().nullable().optional(),
+    mainSet: z.string().nullable().optional(),
+    cooldown: z.string().nullable().optional(),
     targetPace: z.string().nullable().optional(),
     targetHeartRate: z.string().nullable().optional(),
     rpe: z.string().nullable().optional()
-}).optional();
+}).nullable().optional();
 
 // Task Details
 export const TaskDetailsSchema = z.object({
-    steps: z.array(z.string()),
-    definitionOfDone: z.string(),
+    steps: z.array(z.string()).default([]),
+    definitionOfDone: z.string().default(''),
     notes: z.string().optional(),
     training: TrainingDetailsSchema
 });
@@ -70,58 +71,58 @@ export const TaskSchema = z.object({
     durationMinutes: z.number().min(1),
     details: TaskDetailsSchema,
     schedule: TaskScheduleSchema,
-    dependsOnTaskIds: z.array(z.string()),
-    skillImpact: z.array(SkillImpactSchema),
+    dependsOnTaskIds: z.array(z.string()).default([]),
+    skillImpact: z.array(SkillImpactSchema).default([]),
     state: TaskStateSchema,
-    lastUpdated: z.string()
+    lastUpdated: z.string().default(() => new Date().toISOString())
 });
 
 // Milestone Schema
 export const MilestoneSchema = z.object({
     milestoneId: z.string(),
     name: z.string(),
-    completionRule: z.string()
+    completionRule: z.string().default('')
 });
 
 // Phase Schema
 export const PhaseSchema = z.object({
     phaseId: z.string(),
     name: z.string(),
-    intent: z.string(),
+    intent: z.string().default(''),
     order: z.number(),
     startDay: z.number(),
     endDay: z.number(),
-    milestones: z.array(MilestoneSchema)
+    milestones: z.array(MilestoneSchema).default([])
 });
 
 // Roadmap Schema
 export const RoadmapSchema = z.object({
-    phases: z.array(PhaseSchema)
+    phases: z.array(PhaseSchema).default([])
 });
 
 // Skill Tree Schema
 export const SkillTreeSchema = z.object({
-    skills: z.array(SkillSchema)
+    skills: z.array(SkillSchema).default([])
 });
 
 // Daily History
 export const DailyHistorySchema = z.object({
     date: z.string(),
-    completedTaskIds: z.array(z.string()),
-    skippedTaskIds: z.array(z.string()),
+    completedTaskIds: z.array(z.string()).default([]),
+    skippedTaskIds: z.array(z.string()).default([]),
     zeroDay: z.boolean().optional(),
     notes: z.string().optional(),
-    autoReplanSummary: z.string()
+    autoReplanSummary: z.string().default('')
 });
 
 // Progress Schema
 export const ProgressSchema = z.object({
-    history: z.array(DailyHistorySchema)
+    history: z.array(DailyHistorySchema).default([])
 });
 
 // Pause Schema
 export const PauseSchema = z.object({
-    isPaused: z.boolean(),
+    isPaused: z.boolean().default(false),
     pauseUntil: z.string().optional(),
     reason: z.string().optional()
 });
@@ -129,7 +130,7 @@ export const PauseSchema = z.object({
 // Created From Schema
 export const CreatedFromSchema = z.object({
     rawInput: z.string(),
-    constraints: z.string(),
+    constraints: z.string().default(''),
     trainingProfile: z.object({
         currentLevel: z.string().optional(),
         constraints: z.string().optional(),
@@ -138,18 +139,56 @@ export const CreatedFromSchema = z.object({
     }).optional()
 });
 
-// Today Card Rules
+// Today Card Rules - more lenient
 export const TodayCardRulesSchema = z.object({
-    maxTasks: z.number(),
-    selectionLogic: z.array(z.string())
+    maxTasks: z.number().optional(),
+    maxTasksPerDay: z.number().optional(),
+    selectionLogic: z.union([z.array(z.string()), z.string()]).optional()
 }).optional();
+
+// Master Plan Phase Schema (for progressive generation)
+export const MasterPlanPhaseSchema = z.object({
+    phaseNumber: z.number(),
+    name: z.string(),
+    startWeek: z.number(),
+    endWeek: z.number(),
+    focus: z.string(),
+    weeklyPattern: z.string(),
+    targetVolume: z.string().optional(),
+    keyWorkouts: z.array(z.string()).default([]),
+    progressionRules: z.string().default('')
+});
+
+// Master Plan Skill Progression
+export const MasterPlanSkillSchema = z.object({
+    skillName: z.string(),
+    startLevel: z.number().default(0),
+    endLevel: z.number().default(10),
+    milestones: z.array(z.string()).default([])
+});
+
+// Master Plan Schema (lightweight structure for progressive generation)
+export const MasterPlanSchema = z.object({
+    overview: z.string(),
+    principles: z.array(z.string()).default([]),
+    phases: z.array(MasterPlanPhaseSchema).default([]),
+    skillProgression: z.array(MasterPlanSkillSchema).default([]),
+    weeklyTemplate: z.string().optional() // E.g., "Mon: run, Tue: strength, Wed: rest..."
+});
+
+// Chat Message Schema
+export const ChatMessageSchema = z.object({
+    role: z.enum(['user', 'assistant']),
+    content: z.string(),
+    timestamp: z.string().optional()
+});
 
 // Project Schema
 export const ProjectSchema = z.object({
     projectId: z.string(),
     name: z.string(),
-    oneLineIntent: z.string(),
-    definitionOfDone: z.string(),
+    oneLineIntent: z.string().default(''),
+    definitionOfDone: z.string().default(''),
     status: ProjectStatusSchema,
     createdAt: z.string(),
     updatedAt: z.string(),
@@ -163,7 +202,12 @@ export const ProjectSchema = z.object({
     skillTree: SkillTreeSchema,
     progress: ProgressSchema,
     syncedAt: z.string().optional(),
-    assumptions: z.array(z.string()).optional()
+    assumptions: z.array(z.string()).optional(),
+    chatHistory: z.array(ChatMessageSchema).optional(),
+    // Progressive generation fields
+    masterPlan: MasterPlanSchema.optional(),
+    generatedUntilDay: z.number().optional(),
+    lastGeneratedContext: z.string().optional()
 });
 
 // App State Schema
@@ -196,109 +240,75 @@ export type Progress = z.infer<typeof ProgressSchema>;
 export type Pause = z.infer<typeof PauseSchema>;
 export type CreatedFrom = z.infer<typeof CreatedFromSchema>;
 export type TodayCardRules = z.infer<typeof TodayCardRulesSchema>;
+export type MasterPlanPhase = z.infer<typeof MasterPlanPhaseSchema>;
+export type MasterPlanSkill = z.infer<typeof MasterPlanSkillSchema>;
+export type MasterPlan = z.infer<typeof MasterPlanSchema>;
+export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 export type Project = z.infer<typeof ProjectSchema>;
 export type AppState = z.infer<typeof AppStateSchema>;
 
-// Schema as JSON for LLM prompts
+// Simplified schema for LLM - less strict requirements
 export const getSchemaForPrompt = (): string => {
     return `{
   "assumptions": ["string"],
-  "project": {
-    "projectId": "string (uuid)",
+  "name": "string (project name)",
+  "oneLineIntent": "string (what this achieves)",
+  "definitionOfDone": "string (how we know it's complete)",
+  "roadmap": {
+    "phases": [{
+      "phaseId": "phase_xxx",
+      "name": "string",
+      "intent": "string",
+      "order": number,
+      "startDay": number,
+      "endDay": number,
+      "milestones": []
+    }]
+  },
+  "tasks": [{
+    "taskId": "task_xxx",
+    "phaseId": "phase_xxx (must match a phase)",
     "name": "string",
-    "oneLineIntent": "string",
-    "definitionOfDone": "string",
-    "status": "active | paused | completed",
-    "createdAt": "ISO string",
-    "updatedAt": "ISO string",
-    "startDate": "YYYY-MM-DD",
-    "timeHorizonDays": number,
-    "createdFrom": {
-      "rawInput": "string",
-      "constraints": "string",
-      "trainingProfile": {
-        "currentLevel": "string (optional)",
-        "constraints": "string (optional)",
-        "preferences": "string (optional)",
-        "availableMetrics": "string (optional)"
+    "type": "build | think | train | explore | admin | recover | social",
+    "effort": "low | medium | high",
+    "durationMinutes": number,
+    "details": {
+      "steps": ["string"],
+      "definitionOfDone": "string",
+      "training": {
+        "sessionType": "string or null",
+        "warmup": "string or null",
+        "mainSet": "string or null",
+        "cooldown": "string or null",
+        "targetPace": "string or null",
+        "targetHeartRate": "string or null",
+        "rpe": "string or null"
       }
     },
-    "pause": {
-      "isPaused": boolean,
-      "pauseUntil": "YYYY-MM-DD (optional)",
-      "reason": "string (optional)"
+    "schedule": {
+      "latestDay": number,
+      "recommendedDay": number
     },
-    "roadmap": {
-      "phases": [{
-        "phaseId": "string (uuid)",
-        "name": "string",
-        "intent": "string",
-        "order": number (0-indexed),
-        "startDay": number (day 0 = project start),
-        "endDay": number,
-        "milestones": [{
-          "milestoneId": "string (uuid)",
-          "name": "string",
-          "completionRule": "string"
-        }]
-      }]
-    },
-    "tasks": [{
-      "taskId": "string (uuid)",
-      "phaseId": "string (matches a phase)",
+    "dependsOnTaskIds": [],
+    "skillImpact": [{"skillId": "skill_xxx", "delta": 1}],
+    "state": "todo",
+    "lastUpdated": "ISO string"
+  }],
+  "todayCardRules": {
+    "maxTasks": 3,
+    "selectionLogic": "priority"
+  },
+  "skillTree": {
+    "skills": [{
+      "skillId": "skill_xxx",
       "name": "string",
-      "type": "build | think | train | explore | admin | recover | social",
-      "effort": "low | medium | high",
-      "durationMinutes": number (15-180),
-      "details": {
-        "steps": ["string"],
-        "definitionOfDone": "string",
-        "training": {
-          "sessionType": "string",
-          "warmup": "string",
-          "mainSet": "string",
-          "cooldown": "string",
-          "targetPace": "string | null",
-          "targetHeartRate": "string | null",
-          "rpe": "string | null"
-        }
-      },
-      "schedule": {
-        "earliestDay": number,
-        "latestDay": number,
-        "recommendedDay": number
-      },
-      "dependsOnTaskIds": ["string (taskId)"],
-      "skillImpact": [{
-        "skillId": "string",
-        "delta": number (1-3)
-      }],
-      "state": "todo | done | skipped",
-      "lastUpdated": "ISO string"
-    }],
-    "todayCardRules": {
-      "maxTasks": 3,
-      "selectionLogic": [
-        "Respect dependencies",
-        "Prioritize tasks nearing latestDay",
-        "Prefer one primary task",
-        "Bias toward recovery if notes indicate fatigue"
-      ]
-    },
-    "skillTree": {
-      "skills": [{
-        "skillId": "string (uuid)",
-        "name": "string",
-        "description": "string",
-        "level": number (0-10),
-        "maxLevel": number (usually 10),
-        "parents": ["string (skillId)"],
-        "progressRule": "string"
-      }]
-    },
-    "progress": {
-      "history": []
-    }
-  }
+      "description": "string",
+      "level": 0,
+      "maxLevel": 10,
+      "parents": [],
+      "progressRule": "string"
+    }]
+  },
+  "progress": { "history": [] }
 }`;
 };
