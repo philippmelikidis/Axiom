@@ -157,15 +157,15 @@ RECENT TASKS: ${recentTasks}
 GENERATE FOR DAYS ${startDay} to ${endDay} (${endDay - startDay + 1} days)
 
 REQUIREMENTS:
-1. Generate ${Math.ceil((endDay - startDay + 1) * 0.7)} tasks (include rest days)
-2. Each task name MUST contain specific numbers/paces/durations
-3. Use the athlete's race times to calculate correct training zones
+1. Generate ONLY 12-15 tasks maximum (not every day needs a task - include rest days)
+2. Each task name should include intensity/pace info
+3. Keep details.steps SHORT (max 2-3 items)
 4. Spread tasks evenly: recommendedDay between ${startDay} and ${endDay}
-5. Follow weekly pattern but make each task UNIQUE and SPECIFIC
 
 OUTPUT SCHEMA:
 ${taskSchema}
 
+IMPORTANT: Keep your response COMPACT. Do not generate more than 15 tasks.
 Return ONLY valid JSON.`;
 
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;

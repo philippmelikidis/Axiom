@@ -68,7 +68,7 @@ export const TaskSchema = z.object({
     name: z.string(),
     type: TaskTypeSchema,
     effort: EffortSchema,
-    durationMinutes: z.number().min(1),
+    durationMinutes: z.number().default(30),
     details: TaskDetailsSchema,
     schedule: TaskScheduleSchema,
     dependsOnTaskIds: z.array(z.string()).default([]),
